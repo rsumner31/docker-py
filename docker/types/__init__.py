@@ -7,4 +7,5 @@ from .services import (
     Mount, Placement, Privileges, Resources, RestartPolicy, SecretReference,
     ServiceMode, TaskTemplate, UpdateConfig
 )
+from .healthcheck import Healthcheck
 from .swarm import SwarmSpec, SwarmExternalCA
