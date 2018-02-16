@@ -23,6 +23,9 @@ class Model(object):
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.id == other.id
 
+    def __hash__(self):
+        return hash("%s:%s" % (self.__class__.__name__, self.id))
+
     @property
     def id(self):
         """
@@ -59,6 +62,12 @@ class Collection(object):
         #: The client pointing at the server that this collection of objects
         #: is on.
         self.client = client
+
+    def __call__(self, *args, **kwargs):
+        raise TypeError(
+            "'{}' object is not callable. You might be trying to use the old "
+            "(pre-2.0) API - use docker.APIClient if so."
+            .format(self.__class__.__name__))
 
     def list(self):
         raise NotImplementedError

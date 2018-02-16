@@ -9,6 +9,16 @@ It's possible to use :py:class:`APIClient` directly. Some basic things (e.g. run
 
 .. autoclass:: docker.api.client.APIClient
 
+Configs
+-------
+
+.. py:module:: docker.api.config
+
+.. rst-class:: hide-signature
+.. autoclass:: ConfigApiMixin
+  :members:
+  :undoc-members:
+
 Containers
 ----------
 
@@ -18,8 +28,6 @@ Containers
 .. autoclass:: ContainerApiMixin
   :members:
   :undoc-members:
-
-.. py:module:: docker.api.image
 
 Images
 ------
@@ -48,15 +56,6 @@ Networks
 .. autoclass:: docker.api.network.NetworkApiMixin
   :members:
   :undoc-members:
-
-Utilities
-~~~~~~~~~
-
-These functions are available under ``docker.utils`` to create arguments
-for :py:meth:`create_network`:
-
-.. autofunction:: docker.utils.create_ipam_config
-.. autofunction:: docker.utils.create_ipam_pool
 
 Volumes
 -------
@@ -98,6 +97,26 @@ Services
   :members:
   :undoc-members:
 
+Plugins
+-------
+
+.. py:module:: docker.api.plugin
+
+.. rst-class:: hide-signature
+.. autoclass:: PluginApiMixin
+  :members:
+  :undoc-members:
+
+Secrets
+-------
+
+.. py:module:: docker.api.secret
+
+.. rst-class:: hide-signature
+.. autoclass:: SecretApiMixin
+  :members:
+  :undoc-members:
+
 The Docker daemon
 -----------------
 
@@ -107,3 +126,28 @@ The Docker daemon
 .. autoclass:: DaemonApiMixin
   :members:
   :undoc-members:
+
+Configuration types
+-------------------
+
+.. py:module:: docker.types
+
+.. autoclass:: ConfigReference
+.. autoclass:: ContainerSpec
+.. autoclass:: DNSConfig
+.. autoclass:: DriverConfig
+.. autoclass:: EndpointSpec
+.. autoclass:: Healthcheck
+.. autoclass:: IPAMConfig
+.. autoclass:: IPAMPool
+.. autoclass:: Mount
+.. autoclass:: Placement
+.. autoclass:: Privileges
+.. autoclass:: Resources
+.. autoclass:: RestartPolicy
+.. autoclass:: SecretReference
+.. autoclass:: ServiceMode
+.. autoclass:: SwarmExternalCA
+.. autoclass:: SwarmSpec(*args, **kwargs)
+.. autoclass:: TaskTemplate
+.. autoclass:: UpdateConfig

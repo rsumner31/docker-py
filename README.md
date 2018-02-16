@@ -1,14 +1,18 @@
 # Docker SDK for Python
 
-[![Build Status](https://travis-ci.org/docker/docker-py.png)](https://travis-ci.org/docker/docker-py)
+[![Build Status](https://travis-ci.org/docker/docker-py.svg?branch=master)](https://travis-ci.org/docker/docker-py)
 
-A Python library for the Docker API. It lets you do anything the `docker` command does, but from within Python apps – run containers, manage containers, manage Swarms, etc.
+A Python library for the Docker Engine API. It lets you do anything the `docker` command does, but from within Python apps – run containers, manage containers, manage Swarms, etc.
 
 ## Installation
 
-The latest stable version [is available on PyPi](https://pypi.python.org/pypi/docker/). Either add `docker` to your `requirements.txt` file or install with pip:
+The latest stable version [is available on PyPI](https://pypi.python.org/pypi/docker/). Either add `docker` to your `requirements.txt` file or install with pip:
 
     pip install docker
+
+If you are intending to connect to a docker host via TLS, add `docker[tls]` to your requirements instead, or install with pip:
+
+    pip install docker[tls]
 
 ## Usage
 
@@ -22,7 +26,7 @@ client = docker.from_env()
 You can run containers:
 
 ```python
->>> client.containers.run("ubuntu", "echo hello world")
+>>> client.containers.run("ubuntu:latest", "echo hello world")
 'hello world\n'
 ```
 
@@ -70,4 +74,4 @@ You can manage images:
 [<Image 'ubuntu'>, <Image 'nginx'>, ...]
 ```
 
-[Read the full documentation](https://docs.docker.com/sdk/python/) to see everything you can do.
+[Read the full documentation](https://docker-py.readthedocs.io) to see everything you can do.

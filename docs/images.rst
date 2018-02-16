@@ -14,6 +14,7 @@ Methods available on ``client.images``:
   .. automethod:: get
   .. automethod:: list(**kwargs)
   .. automethod:: load
+  .. automethod:: prune
   .. automethod:: pull
   .. automethod:: push
   .. automethod:: remove
@@ -25,12 +26,15 @@ Image objects
 
 .. autoclass:: Image()
 
-  .. autoattribute:: id
-  .. autoattribute:: short_id
-  .. autoattribute:: tags
   .. py:attribute:: attrs
 
     The raw representation of this object from the server.
+
+  .. autoattribute:: id
+  .. autoattribute:: labels
+  .. autoattribute:: short_id
+  .. autoattribute:: tags
+
 
 
   .. automethod:: history

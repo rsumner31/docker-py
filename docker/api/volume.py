@@ -3,7 +3,6 @@ from .. import utils
 
 
 class VolumeApiMixin(object):
-    @utils.minimum_version('1.21')
     def volumes(self, filters=None):
         """
         List volumes currently registered by the docker daemon. Similar to the
@@ -37,8 +36,8 @@ class VolumeApiMixin(object):
         url = self._url('/volumes')
         return self._result(self._get(url, params=params), True)
 
-    @utils.minimum_version('1.21')
-    def create_volume(self, name, driver=None, driver_opts=None, labels=None):
+    def create_volume(self, name=None, driver=None, driver_opts=None,
+                      labels=None):
         """
         Create and register a named volume
 
@@ -64,7 +63,8 @@ class VolumeApiMixin(object):
             {u'Driver': u'local',
              u'Labels': {u'key': u'value'},
              u'Mountpoint': u'/var/lib/docker/volumes/foobar/_data',
-             u'Name': u'foobar'}
+             u'Name': u'foobar',
+             u'Scope': u'local'}
 
         """
         url = self._url('/volumes/create')
@@ -88,7 +88,6 @@ class VolumeApiMixin(object):
 
         return self._result(self._post_json(url, data=data), True)
 
-    @utils.minimum_version('1.21')
     def inspect_volume(self, name):
         """
         Retrieve volume info by name.
@@ -114,18 +113,49 @@ class VolumeApiMixin(object):
         url = self._url('/volumes/{0}', name)
         return self._result(self._get(url), True)
 
-    @utils.minimum_version('1.21')
-    def remove_volume(self, name):
+    @utils.minimum_version('1.25')
+    def prune_volumes(self, filters=None):
+        """
+        Delete unused volumes
+
+        Args:
+            filters (dict): Filters to process on the prune list.
+
+        Returns:
+            (dict): A dict containing a list of deleted volume names and
+                the amount of disk space reclaimed in bytes.
+
+        Raises:
+            :py:class:`docker.errors.APIError`
+                If the server returns an error.
+        """
+        params = {}
+        if filters:
+            params['filters'] = utils.convert_filters(filters)
+        url = self._url('/volumes/prune')
+        return self._result(self._post(url, params=params), True)
+
+    def remove_volume(self, name, force=False):
         """
         Remove a volume. Similar to the ``docker volume rm`` command.
 
         Args:
             name (str): The volume's name
+            force (bool): Force removal of volumes that were already removed
+                out of band by the volume driver plugin.
 
         Raises:
-
-        ``docker.errors.APIError``: If volume failed to remove.
+            :py:class:`docker.errors.APIError`
+                If volume failed to remove.
         """
-        url = self._url('/volumes/{0}', name)
+        params = {}
+        if force:
+            if utils.version_lt(self._version, '1.25'):
+                raise errors.InvalidVersion(
+                    'force removal was introduced in API 1.25'
+                )
+            params = {'force': force}
+
+        url = self._url('/volumes/{0}', name, params=params)
         resp = self._delete(url)
         self._raise_for_status(resp)

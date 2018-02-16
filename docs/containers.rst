@@ -14,17 +14,20 @@ Methods available on ``client.containers``:
   .. automethod:: create(image, command=None, **kwargs)
   .. automethod:: get(id_or_name)
   .. automethod:: list(**kwargs)
+  .. automethod:: prune
 
 Container objects
 -----------------
 
 .. autoclass:: Container()
 
-  .. autoattribute:: id
-  .. autoattribute:: short_id
-  .. autoattribute:: name
-  .. autoattribute:: status
   .. py:attribute:: attrs
+  .. autoattribute:: id
+  .. autoattribute:: image
+  .. autoattribute:: labels
+  .. autoattribute:: name
+  .. autoattribute:: short_id
+  .. autoattribute:: status
 
     The raw representation of this object from the server.
 
@@ -39,6 +42,7 @@ Container objects
   .. automethod:: logs
   .. automethod:: pause
   .. automethod:: put_archive
+  .. automethod:: reload
   .. automethod:: remove
   .. automethod:: rename
   .. automethod:: resize
@@ -49,3 +53,4 @@ Container objects
   .. automethod:: top
   .. automethod:: unpause
   .. automethod:: update
+  .. automethod:: wait

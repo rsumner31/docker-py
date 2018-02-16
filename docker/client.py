@@ -1,28 +1,32 @@
 from .api.client import APIClient
+from .constants import DEFAULT_TIMEOUT_SECONDS
+from .models.configs import ConfigCollection
 from .models.containers import ContainerCollection
 from .models.images import ImageCollection
 from .models.networks import NetworkCollection
 from .models.nodes import NodeCollection
+from .models.plugins import PluginCollection
+from .models.secrets import SecretCollection
 from .models.services import ServiceCollection
 from .models.swarm import Swarm
 from .models.volumes import VolumeCollection
 from .utils import kwargs_from_env
 
 
-class Client(object):
+class DockerClient(object):
     """
     A client for communicating with a Docker server.
 
     Example:
 
         >>> import docker
-        >>> client = Client(base_url='unix://var/run/docker.sock')
+        >>> client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
     Args:
         base_url (str): URL to the Docker server. For example,
             ``unix:///var/run/docker.sock`` or ``tcp://127.0.0.1:1234``.
         version (str): The version of the API to use. Set to ``auto`` to
-            automatically detect the server's version. Default: ``1.24``
+            automatically detect the server's version. Default: ``1.30``
         timeout (int): Default timeout for API calls, in seconds.
         tls (bool or :py:class:`~docker.tls.TLSConfig`): Enable TLS. Pass
             ``True`` to enable it with default options, or pass a
@@ -56,7 +60,7 @@ class Client(object):
 
         Args:
             version (str): The version of the API to use. Set to ``auto`` to
-                automatically detect the server's version. Default: ``1.24``
+                automatically detect the server's version. Default: ``1.30``
             timeout (int): Default timeout for API calls, in seconds.
             ssl_version (int): A valid `SSL version`_.
             assert_hostname (bool): Verify the hostname of the server.
@@ -71,12 +75,20 @@ class Client(object):
         .. _`SSL version`:
             https://docs.python.org/3.5/library/ssl.html#ssl.PROTOCOL_TLSv1
         """
-        timeout = kwargs.pop('timeout', None)
+        timeout = kwargs.pop('timeout', DEFAULT_TIMEOUT_SECONDS)
         version = kwargs.pop('version', None)
         return cls(timeout=timeout, version=version,
                    **kwargs_from_env(**kwargs))
 
     # Resources
+    @property
+    def configs(self):
+        """
+        An object for managing configs on the server. See the
+        :doc:`configs documentation <configs>` for full details.
+        """
+        return ConfigCollection(client=self)
+
     @property
     def containers(self):
         """
@@ -110,6 +122,22 @@ class Client(object):
         return NodeCollection(client=self)
 
     @property
+    def plugins(self):
+        """
+        An object for managing plugins on the server. See the
+        :doc:`plugins documentation <plugins>` for full details.
+        """
+        return PluginCollection(client=self)
+
+    @property
+    def secrets(self):
+        """
+        An object for managing secrets on the server. See the
+        :doc:`secrets documentation <secrets>` for full details.
+        """
+        return SecretCollection(client=self)
+
+    @property
     def services(self):
         """
         An object for managing services on the server. See the
@@ -138,6 +166,10 @@ class Client(object):
         return self.api.events(*args, **kwargs)
     events.__doc__ = APIClient.events.__doc__
 
+    def df(self):
+        return self.api.df()
+    df.__doc__ = APIClient.df.__doc__
+
     def info(self, *args, **kwargs):
         return self.api.info(*args, **kwargs)
     info.__doc__ = APIClient.info.__doc__
@@ -154,4 +186,14 @@ class Client(object):
         return self.api.version(*args, **kwargs)
     version.__doc__ = APIClient.version.__doc__
 
-from_env = Client.from_env
+    def __getattr__(self, name):
+        s = ["'DockerClient' object has no attribute '{}'".format(name)]
+        # If a user calls a method on APIClient, they
+        if hasattr(APIClient, name):
+            s.append("In Docker SDK for Python 2.0, this method is now on the "
+                     "object APIClient. See the low-level API section of the "
+                     "documentation for more details.")
+        raise AttributeError(' '.join(s))
+
+
+from_env = DockerClient.from_env

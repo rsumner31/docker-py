@@ -21,6 +21,11 @@ class ImageCollectionTest(unittest.TestCase):
         assert isinstance(image, Image)
         assert image.id == FAKE_IMAGE_ID
 
+    def test_labels(self):
+        client = make_fake_client()
+        image = client.images.get(FAKE_IMAGE_ID)
+        assert image.labels == {'bar': 'foo'}
+
     def test_list(self):
         client = make_fake_client()
         images = client.images.list(all=True)
@@ -36,9 +41,22 @@ class ImageCollectionTest(unittest.TestCase):
 
     def test_pull(self):
         client = make_fake_client()
-        image = client.images.pull('test_image')
-        client.api.pull.assert_called_with('test_image')
-        client.api.inspect_image.assert_called_with('test_image')
+        image = client.images.pull('test_image:latest')
+        client.api.pull.assert_called_with('test_image', tag='latest')
+        client.api.inspect_image.assert_called_with('test_image:latest')
+        assert isinstance(image, Image)
+        assert image.id == FAKE_IMAGE_ID
+
+    def test_pull_multiple(self):
+        client = make_fake_client()
+        images = client.images.pull('test_image')
+        client.api.pull.assert_called_with('test_image', tag=None)
+        client.api.images.assert_called_with(
+            all=False, name='test_image', filters=None
+        )
+        client.api.inspect_image.assert_called_with(FAKE_IMAGE_ID)
+        assert len(images) == 1
+        image = images[0]
         assert isinstance(image, Image)
         assert image.id == FAKE_IMAGE_ID
 
@@ -80,6 +98,11 @@ class ImageTest(unittest.TestCase):
 
         image = Image(attrs={
             'RepoTags': ['<none>:<none>']
+        })
+        assert image.tags == []
+
+        image = Image(attrs={
+            'RepoTags': None
         })
         assert image.tags == []
 

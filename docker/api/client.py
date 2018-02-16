@@ -1,6 +1,5 @@
 import json
 import struct
-import warnings
 from functools import partial
 
 import requests
@@ -9,25 +8,32 @@ import six
 import websocket
 
 from .build import BuildApiMixin
+from .config import ConfigApiMixin
 from .container import ContainerApiMixin
 from .daemon import DaemonApiMixin
 from .exec_api import ExecApiMixin
 from .image import ImageApiMixin
 from .network import NetworkApiMixin
+from .plugin import PluginApiMixin
+from .secret import SecretApiMixin
 from .service import ServiceApiMixin
 from .swarm import SwarmApiMixin
 from .volume import VolumeApiMixin
-from .. import auth, ssladapter
-from ..constants import (DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT,
-                         IS_WINDOWS_PLATFORM, DEFAULT_DOCKER_API_VERSION,
-                         STREAM_HEADER_SIZE_BYTES, DEFAULT_NUM_POOLS,
-                         MINIMUM_DOCKER_API_VERSION)
-from ..errors import (DockerException, TLSParameterError,
-                      create_api_error_from_http_exception)
+from .. import auth
+from ..constants import (
+    DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, IS_WINDOWS_PLATFORM,
+    DEFAULT_DOCKER_API_VERSION, STREAM_HEADER_SIZE_BYTES, DEFAULT_NUM_POOLS,
+    MINIMUM_DOCKER_API_VERSION
+)
+from ..errors import (
+    DockerException, InvalidVersion, TLSParameterError,
+    create_api_error_from_http_exception
+)
 from ..tls import TLSConfig
-from ..transport import UnixAdapter
-from ..utils import utils, check_resource, update_headers
-from ..utils.socket import frames_iter
+from ..transport import SSLAdapter, UnixAdapter
+from ..utils import utils, check_resource, update_headers, config
+from ..utils.socket import frames_iter, socket_raw_iter
+from ..utils.json_stream import json_stream
 try:
     from ..transport import NpipeAdapter
 except ImportError:
@@ -37,37 +43,40 @@ except ImportError:
 class APIClient(
         requests.Session,
         BuildApiMixin,
+        ConfigApiMixin,
         ContainerApiMixin,
         DaemonApiMixin,
         ExecApiMixin,
         ImageApiMixin,
         NetworkApiMixin,
+        PluginApiMixin,
+        SecretApiMixin,
         ServiceApiMixin,
         SwarmApiMixin,
         VolumeApiMixin):
     """
-    A low-level client for the Docker Remote API.
+    A low-level client for the Docker Engine API.
 
     Example:
 
         >>> import docker
         >>> client = docker.APIClient(base_url='unix://var/run/docker.sock')
         >>> client.version()
-        {u'ApiVersion': u'1.24',
+        {u'ApiVersion': u'1.33',
          u'Arch': u'amd64',
-         u'BuildTime': u'2016-09-27T23:38:15.810178467+00:00',
-         u'Experimental': True,
-         u'GitCommit': u'45bed2c',
-         u'GoVersion': u'go1.6.3',
-         u'KernelVersion': u'4.4.22-moby',
+         u'BuildTime': u'2017-11-19T18:46:37.000000000+00:00',
+         u'GitCommit': u'f4ffd2511c',
+         u'GoVersion': u'go1.9.2',
+         u'KernelVersion': u'4.14.3-1-ARCH',
+         u'MinAPIVersion': u'1.12',
          u'Os': u'linux',
-         u'Version': u'1.12.2-rc1'}
+         u'Version': u'17.10.0-ce'}
 
     Args:
         base_url (str): URL to the Docker server. For example,
             ``unix:///var/run/docker.sock`` or ``tcp://127.0.0.1:1234``.
         version (str): The version of the API to use. Set to ``auto`` to
-            automatically detect the server's version. Default: ``1.24``
+            automatically detect the server's version. Default: ``1.30``
         timeout (int): Default timeout for API calls, in seconds.
         tls (bool or :py:class:`~docker.tls.TLSConfig`): Enable TLS. Pass
             ``True`` to enable it with default options, or pass a
@@ -75,6 +84,13 @@ class APIClient(
             configuration.
         user_agent (str): Set a custom user agent for requests to the server.
     """
+
+    __attrs__ = requests.Session.__attrs__ + ['_auth_configs',
+                                              '_general_configs',
+                                              '_version',
+                                              'base_url',
+                                              'timeout']
+
     def __init__(self, base_url=None, version=None,
                  timeout=DEFAULT_TIMEOUT_SECONDS, tls=False,
                  user_agent=DEFAULT_USER_AGENT, num_pools=DEFAULT_NUM_POOLS):
@@ -89,7 +105,10 @@ class APIClient(
         self.timeout = timeout
         self.headers['User-Agent'] = user_agent
 
-        self._auth_configs = auth.load_config()
+        self._general_configs = config.load_general_config()
+        self._auth_configs = auth.load_config(
+            config_dict=self._general_configs
+        )
 
         base_url = utils.parse_host(
             base_url, IS_WINDOWS_PLATFORM, tls=bool(tls)
@@ -121,9 +140,7 @@ class APIClient(
             if isinstance(tls, TLSConfig):
                 tls.configure_client(self)
             elif tls:
-                self._custom_adapter = ssladapter.SSLAdapter(
-                    pool_connections=num_pools
-                )
+                self._custom_adapter = SSLAdapter(pool_connections=num_pools)
                 self.mount('https://', self._custom_adapter)
             self.base_url = base_url
 
@@ -142,11 +159,9 @@ class APIClient(
                 )
             )
         if utils.version_lt(self._version, MINIMUM_DOCKER_API_VERSION):
-            warnings.warn(
-                'The minimum API version supported is {}, but you are using '
-                'version {}. It is recommended you either upgrade Docker '
-                'Engine or use an older version of docker-py.'.format(
-                    MINIMUM_DOCKER_API_VERSION, self._version)
+            raise InvalidVersion(
+                'API versions below {} are no longer supported by this '
+                'library.'.format(MINIMUM_DOCKER_API_VERSION)
             )
 
     def _retrieve_server_version(self):
@@ -192,7 +207,7 @@ class APIClient(
                     'instead'.format(arg, type(arg))
                 )
 
-        quote_f = partial(six.moves.urllib.parse.quote_plus, safe="/:")
+        quote_f = partial(six.moves.urllib.parse.quote, safe="/:")
         args = map(quote_f, args)
 
         if kwargs.get('versioned_api', True):
@@ -223,10 +238,12 @@ class APIClient(
         # Go <1.1 can't unserialize null to a string
         # so we do this disgusting thing here.
         data2 = {}
-        if data is not None:
+        if data is not None and isinstance(data, dict):
             for k, v in six.iteritems(data):
                 if v is not None:
                     data2[k] = v
+        elif data is not None:
+            data2 = data
 
         if 'headers' not in kwargs:
             kwargs['headers'] = {}
@@ -240,7 +257,7 @@ class APIClient(
             'stream': 1
         }
 
-    @check_resource
+    @check_resource('container')
     def _attach_websocket(self, container, params=None):
         url = self._url("/containers/{0}/attach/ws", container)
         req = requests.Request("POST", url, params=self._attach_params(params))
@@ -276,27 +293,20 @@ class APIClient(
 
     def _stream_helper(self, response, decode=False):
         """Generator for data coming from a chunked-encoded HTTP response."""
+
         if response.raw._fp.chunked:
-            reader = response.raw
-            while not reader.closed:
-                # this read call will block until we get a chunk
-                data = reader.read(1)
-                if not data:
-                    break
-                if reader._fp.chunk_left:
-                    data += reader.read(reader._fp.chunk_left)
-                if decode:
-                    if six.PY3:
-                        data = data.decode('utf-8')
-                    # remove the trailing newline
-                    data = data.strip()
-                    # split the data at any newlines
-                    data_list = data.split("\r\n")
-                    # load and yield each line seperately
-                    for data in data_list:
-                        data = json.loads(data)
-                        yield data
-                else:
+            if decode:
+                for chunk in json_stream(self._stream_helper(response, False)):
+                    yield chunk
+            else:
+                reader = response.raw
+                while not reader.closed:
+                    # this read call will block until we get a chunk
+                    data = reader.read(1)
+                    if not data:
+                        break
+                    if reader._fp.chunk_left:
+                        data += reader.read(reader._fp.chunk_left)
                     yield data
         else:
             # Response isn't chunked, meaning we probably
@@ -307,11 +317,13 @@ class APIClient(
         """A generator of multiplexed data blocks read from a buffered
         response."""
         buf = self._result(response, binary=True)
+        buf_length = len(buf)
         walker = 0
         while True:
-            if len(buf[walker:]) < 8:
+            if buf_length - walker < STREAM_HEADER_SIZE_BYTES:
                 break
-            _, length = struct.unpack_from('>BxxxL', buf[walker:])
+            header = buf[walker:walker + STREAM_HEADER_SIZE_BYTES]
+            _, length = struct.unpack_from('>BxxxL', header)
             start = walker + STREAM_HEADER_SIZE_BYTES
             end = start + length
             walker = end
@@ -338,28 +350,25 @@ class APIClient(
                 break
             yield data
 
-    def _stream_raw_result_old(self, response):
-        ''' Stream raw output for API versions below 1.6 '''
-        self._raise_for_status(response)
-        for line in response.iter_lines(chunk_size=1,
-                                        decode_unicode=True):
-            # filter out keep-alive new lines
-            if line:
-                yield line
-
     def _stream_raw_result(self, response):
-        ''' Stream result for TTY-enabled container above API 1.6 '''
+        ''' Stream result for TTY-enabled container '''
         self._raise_for_status(response)
         for out in response.iter_content(chunk_size=1, decode_unicode=True):
             yield out
 
-    def _read_from_socket(self, response, stream):
+    def _read_from_socket(self, response, stream, tty=False):
         socket = self._get_raw_response_socket(response)
 
-        if stream:
-            return frames_iter(socket)
+        gen = None
+        if tty is False:
+            gen = frames_iter(socket)
         else:
-            return six.binary_type().join(frames_iter(socket))
+            gen = socket_raw_iter(socket)
+
+        if stream:
+            return gen
+        else:
+            return six.binary_type().join(gen)
 
     def _disable_socket_timeout(self, socket):
         """ Depending on the combination of python version and whether we're
@@ -389,16 +398,15 @@ class APIClient(
 
             s.settimeout(None)
 
-    def _get_result(self, container, stream, res):
+    @check_resource('container')
+    def _check_is_tty(self, container):
         cont = self.inspect_container(container)
-        return self._get_result_tty(stream, res, cont['Config']['Tty'])
+        return cont['Config']['Tty']
+
+    def _get_result(self, container, stream, res):
+        return self._get_result_tty(stream, res, self._check_is_tty(container))
 
     def _get_result_tty(self, stream, res, is_tty):
-        # Stream multi-plexing was only introduced in API v1.6. Anything
-        # before that needs old-style streaming.
-        if utils.compare_version('1.6', self._version) < 0:
-            return self._stream_raw_result_old(res)
-
         # We should also use raw streaming (without keep-alives)
         # if we're dealing with a tty-enabled container.
         if is_tty:
@@ -430,3 +438,17 @@ class APIClient(
     @property
     def api_version(self):
         return self._version
+
+    def reload_config(self, dockercfg_path=None):
+        """
+        Force a reload of the auth configuration
+
+        Args:
+            dockercfg_path (str): Use a custom path for the Docker config file
+                (default ``$HOME/.docker/config.json`` if present,
+                otherwise``$HOME/.dockercfg``)
+
+        Returns:
+            None
+        """
+        self._auth_configs = auth.load_config(dockercfg_path)

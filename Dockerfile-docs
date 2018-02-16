@@ -1,12 +1,13 @@
 FROM python:3.5
 
-RUN mkdir /home/docker-py
-WORKDIR /home/docker-py
+ARG uid=1000
+ARG gid=1000
 
-COPY requirements.txt /home/docker-py/requirements.txt
-RUN pip install -r requirements.txt
+RUN addgroup --gid $gid sphinx \
+ && useradd --uid $uid --gid $gid -M sphinx
 
-COPY docs-requirements.txt /home/docker-py/docs-requirements.txt
-RUN pip install -r docs-requirements.txt
+WORKDIR /src
+COPY requirements.txt docs-requirements.txt ./
+RUN pip install -r requirements.txt -r docs-requirements.txt
 
-COPY . /home/docker-py
+USER sphinx

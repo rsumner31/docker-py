@@ -1,9 +1,11 @@
+import itertools
 import re
 
 import six
 
 from ..api import APIClient
-from ..errors import BuildError
+from ..errors import BuildError, ImageLoadError
+from ..utils import parse_repository_tag
 from ..utils.json_stream import json_stream
 from .resource import Collection, Model
 
@@ -14,6 +16,14 @@ class Image(Model):
     """
     def __repr__(self):
         return "<%s: '%s'>" % (self.__class__.__name__, "', '".join(self.tags))
+
+    @property
+    def labels(self):
+        """
+        The labels of an image as dictionary.
+        """
+        result = self.attrs['Config'].get('Labels')
+        return result or {}
 
     @property
     def short_id(self):
@@ -30,10 +40,10 @@ class Image(Model):
         """
         The image's tags.
         """
-        return [
-            tag for tag in self.attrs.get('RepoTags', [])
-            if tag != '<none>:<none>'
-        ]
+        tags = self.attrs.get('RepoTags')
+        if tags is None:
+            tags = []
+        return [tag for tag in tags if tag != '<none>:<none>']
 
     def history(self):
         """
@@ -53,8 +63,7 @@ class Image(Model):
         Get a tarball of an image. Similar to the ``docker save`` command.
 
         Returns:
-            (urllib3.response.HTTPResponse object): The response from the
-            daemon.
+            (generator): A stream of raw archive data.
 
         Raises:
             :py:class:`docker.errors.APIError`
@@ -62,10 +71,10 @@ class Image(Model):
 
         Example:
 
-            >>> image = cli.get("fedora:latest")
-            >>> resp = image.save()
-            >>> f = open('/tmp/fedora-latest.tar', 'w')
-            >>> f.write(resp.data)
+            >>> image = cli.get_image("busybox:latest")
+            >>> f = open('/tmp/busybox-latest.tar', 'w')
+            >>> for chunk in image:
+            >>>   f.write(chunk)
             >>> f.close()
         """
         return self.client.api.get_image(self.id)
@@ -87,7 +96,7 @@ class Image(Model):
         Returns:
             (bool): ``True`` if successful
         """
-        self.client.api.tag(self.id, repository, tag=tag, **kwargs)
+        return self.client.api.tag(self.id, repository, tag=tag, **kwargs)
 
 
 class ImageCollection(Collection):
@@ -117,9 +126,6 @@ class ImageCollection(Collection):
             rm (bool): Remove intermediate containers. The ``docker build``
                 command now defaults to ``--rm=true``, but we have kept the old
                 default of `False` to preserve backward compatibility
-            stream (bool): *Deprecated for API version > 1.8 (always True)*.
-                Return a blocking generator you can iterate over to retrieve
-                build output as it happens
             timeout (int): HTTP timeout
             custom_context (bool): Optional if using ``fileobj``
             encoding (str): The encoding for a stream. Set to ``gzip`` for
@@ -138,11 +144,25 @@ class ImageCollection(Collection):
                 - cpushares (int): CPU shares (relative weight)
                 - cpusetcpus (str): CPUs in which to allow execution, e.g.,
                     ``"0-3"``, ``"0,1"``
-            decode (bool): If set to ``True``, the returned stream will be
-                decoded into dicts on the fly. Default ``False``.
+            shmsize (int): Size of `/dev/shm` in bytes. The size must be
+                greater than 0. If omitted the system uses 64MB
+            labels (dict): A dictionary of labels to set on the image
+            cache_from (list): A list of images used for build cache
+                resolution
+            target (str): Name of the build-stage to build in a multi-stage
+                Dockerfile
+            network_mode (str): networking mode for the run commands during
+                build
+            squash (bool): Squash the resulting images layers into a
+                single layer.
+            extra_hosts (dict): Extra hosts to add to /etc/hosts in building
+                containers, as a mapping of hostname to IP address.
+            platform (str): Platform in the format ``os[/arch[/variant]]``.
 
         Returns:
-            (:py:class:`Image`): The built image.
+            (tuple): The first item is the :py:class:`Image` object for the
+                image that was build. The second item is a generator of the
+                build logs as JSON-decoded objects.
 
         Raises:
             :py:class:`docker.errors.BuildError`
@@ -155,18 +175,23 @@ class ImageCollection(Collection):
         resp = self.client.api.build(**kwargs)
         if isinstance(resp, six.string_types):
             return self.get(resp)
-        events = list(json_stream(resp))
-        if not events:
-            return BuildError('Unknown')
-        event = events[-1]
-        if 'stream' in event:
-            match = re.search(r'Successfully built ([0-9a-f]+)',
-                              event.get('stream', ''))
-            if match:
-                image_id = match.group(1)
-                return self.get(image_id)
-
-        raise BuildError(event.get('error') or event)
+        last_event = None
+        image_id = None
+        result_stream, internal_stream = itertools.tee(json_stream(resp))
+        for chunk in internal_stream:
+            if 'error' in chunk:
+                raise BuildError(chunk['error'], result_stream)
+            if 'stream' in chunk:
+                match = re.search(
+                    r'(^Successfully built |sha256:)([0-9a-f]+)$',
+                    chunk['stream']
+                )
+                if match:
+                    image_id = match.group(2)
+            last_event = chunk
+        if image_id:
+            return (self.get(image_id), result_stream)
+        raise BuildError(last_event or 'Unknown', result_stream)
 
     def get(self, name):
         """
@@ -179,8 +204,8 @@ class ImageCollection(Collection):
             (:py:class:`Image`): The image.
 
         Raises:
-            :py:class:`docker.errors.ImageNotFound` If the image does not
-            exist.
+            :py:class:`docker.errors.ImageNotFound`
+                If the image does not exist.
             :py:class:`docker.errors.APIError`
                 If the server returns an error.
         """
@@ -207,7 +232,7 @@ class ImageCollection(Collection):
                 If the server returns an error.
         """
         resp = self.client.api.images(name=name, all=all, filters=filters)
-        return [self.prepare_model(r) for r in resp]
+        return [self.get(r["Id"]) for r in resp]
 
     def load(self, data):
         """
@@ -218,32 +243,53 @@ class ImageCollection(Collection):
         Args:
             data (binary): Image data to be loaded.
 
+        Returns:
+            (list of :py:class:`Image`): The images.
+
         Raises:
             :py:class:`docker.errors.APIError`
                 If the server returns an error.
         """
-        return self.client.api.load_image(data)
+        resp = self.client.api.load_image(data)
+        images = []
+        for chunk in resp:
+            if 'stream' in chunk:
+                match = re.search(
+                    r'(^Loaded image ID: |^Loaded image: )(.+)$',
+                    chunk['stream']
+                )
+                if match:
+                    image_id = match.group(2)
+                    images.append(image_id)
+            if 'error' in chunk:
+                raise ImageLoadError(chunk['error'])
 
-    def pull(self, name, **kwargs):
+        return [self.get(i) for i in images]
+
+    def pull(self, repository, tag=None, **kwargs):
         """
         Pull an image of the given name and return it. Similar to the
         ``docker pull`` command.
+        If no tag is specified, all tags from that repository will be
+        pulled.
 
         If you want to get the raw pull output, use the
         :py:meth:`~docker.api.image.ImageApiMixin.pull` method in the
         low-level API.
 
         Args:
-            repository (str): The repository to pull
+            name (str): The repository to pull
             tag (str): The tag to pull
-            insecure_registry (bool): Use an insecure registry
             auth_config (dict): Override the credentials that
-                :py:meth:`~docker.client.Client.login` has set for
+                :py:meth:`~docker.client.DockerClient.login` has set for
                 this request. ``auth_config`` should contain the ``username``
                 and ``password`` keys to be valid.
+            platform (str): Platform in the format ``os[/arch[/variant]]``
 
         Returns:
-            (:py:class:`Image`): The image that has been pulled.
+            (:py:class:`Image` or list): The image that has been pulled.
+                If no ``tag`` was specified, the method will return a list
+                of :py:class:`Image` objects belonging to this repository.
 
         Raises:
             :py:class:`docker.errors.APIError`
@@ -251,10 +297,19 @@ class ImageCollection(Collection):
 
         Example:
 
-            >>> image = client.images.pull('busybox')
+            >>> # Pull the image tagged `latest` in the busybox repo
+            >>> image = client.images.pull('busybox:latest')
+
+            >>> # Pull all tags in the busybox repo
+            >>> images = client.images.pull('busybox')
         """
-        self.client.api.pull(name, **kwargs)
-        return self.get(name)
+        if not tag:
+            repository, tag = parse_repository_tag(repository)
+
+        self.client.api.pull(repository, tag=tag, **kwargs)
+        if tag:
+            return self.get('{0}:{1}'.format(repository, tag))
+        return self.list(repository)
 
     def push(self, repository, tag=None, **kwargs):
         return self.client.api.push(repository, tag=tag, **kwargs)
@@ -267,3 +322,7 @@ class ImageCollection(Collection):
     def search(self, *args, **kwargs):
         return self.client.api.search(*args, **kwargs)
     search.__doc__ = APIClient.search.__doc__
+
+    def prune(self, filters=None):
+        return self.client.api.prune_images(filters=filters)
+    prune.__doc__ = APIClient.prune_images.__doc__

@@ -1,6 +1,554 @@
 Change log
 ==========
 
+3.0.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/39?closed=1)
+
+### Breaking changes
+
+* Support for API version < 1.21 has been removed.
+* The following methods have been removed:
+  * `APIClient.copy` has been removed. Users should use `APIClient.get_archive`
+    instead.
+  * `APIClient.insert` has been removed. Users may use `APIClient.put_archive`
+    combined with `APIClient.commit` to replicate the method's behavior.
+  * `utils.ping_registry` and `utils.ping` have been removed.
+* The following parameters have been removed:
+  * `stream` in `APIClient.build`
+  * `cpu_shares`, `cpuset`, `dns`, `mem_limit`, `memswap_limit`,
+    `volume_driver`, `volumes_from` in `APIClient.create_container`. These are
+    all replaced by their equivalent in `create_host_config`
+  * `insecure_registry` in `APIClient.login`, `APIClient.pull`,
+    `APIClient.push`, `DockerClient.images.push` and `DockerClient.images.pull`
+  * `viz` in `APIClient.images`
+* The following parameters have been renamed:
+  * `endpoint_config` in `APIClient.create_service` and
+    `APIClient.update_service` is now `endpoint_spec`
+  * `name` in `DockerClient.images.pull` is now `repository`
+* The return value for the following methods has changed:
+  * `APIClient.wait` and `Container.wait` now return a ``dict`` representing
+    the API's response instead of returning the status code directly.
+  * `DockerClient.images.load` now returns a list of `Image` objects that have
+    for the images that were loaded, instead of a log stream.
+  * `Container.exec_run` now returns a tuple of (exit_code, output) instead of
+    just the output.
+  * `DockerClient.images.build` now returns a tuple of (image, build_logs)
+    instead of just the image object.
+  * `APIClient.export`, `APIClient.get_archive` and `APIClient.get_image` now
+    return generators streaming the raw binary data from the server's response.
+  * When no tag is provided, `DockerClient.images.pull` now returns a list of
+    `Image`s associated to the pulled repository instead of just the `latest`
+    image.
+
+### Features
+
+* The Docker Python SDK is now officially supported on Python 3.6
+* Added `scale` method to the `Service` model ; this method is a shorthand
+  that calls `update_service` with the required number of replicas
+* Added support for the `platform` parameter in `APIClient.build`,
+  `DockerClient.images.build`, `APIClient.pull` and `DockerClient.images.pull`
+* Added support for the `until` parameter in `APIClient.logs` and
+  `Container.logs`
+* Added support for the `workdir` argument in `APIClient.exec_create` and
+  `Container.exec_run`
+* Added support for the `condition` argument in `APIClient.wait` and
+  `Container.wait`
+* Users can now specify a publish mode for ports in `EndpointSpec` using
+  the `{published_port: (target_port, protocol, publish_mode)}` syntax.
+* Added support for the `isolation` parameter in `ContainerSpec`,
+  `DockerClient.services.create` and `Service.update`
+* `APIClient.attach_socket`, `APIClient.exec_create` now allow specifying a
+  `detach_keys` combination. If unspecified, the value from the `config.json`
+  file will be used
+* TLS connections now default to using the TLSv1.2 protocol when available
+
+
+### Bugfixes
+
+* Fixed a bug where whitespace-only lines in `.dockerignore` would break builds
+  on Windows
+* Fixed a bug where broken symlinks inside a build context would cause the
+  build to fail
+* Fixed a bug where specifying volumes with Windows drives would cause
+  incorrect parsing in `DockerClient.containers.run`
+* Fixed a bug where the `networks` data provided to `create_service` and
+  `update_service` would be sent incorrectly to the Engine with API < 1.25
+* Pulling all tags from a repository with no `latest` tag using the
+  `DockerClient` will no longer raise a `NotFound` exception
+
+2.7.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/41?closed=1)
+
+### Features
+
+* Added `unlock_swarm` and `get_unlock_key` methods to the `APIClient`.
+    * Added `unlock` and `get_unlock_key` to `DockerClient.swarm`.
+* Added a `greedy` parameter to `DockerClient.networks.list`, yielding
+  additional details about the listed networks.
+* Added `cpu_rt_runtime` and `cpu_rt_period` as parameters to
+  `APIClient.create_host_config` and `DockerClient.containers.run`.
+* Added the `order` argument to `UpdateConfig`.
+* Added `fetch_current_spec` to `APIClient.update_service` and `Service.update`
+  that will retrieve the current configuration of the service and merge it with
+  the provided parameters to determine the new configuration.
+
+### Bugfixes
+
+* Fixed a bug where the `build` method tried to include inaccessible files
+  in the context, leading to obscure errors during the build phase
+  (inaccessible files inside the context now raise an `IOError` instead).
+* Fixed a bug where the `build` method would try to read from FIFOs present
+  inside the build context, causing it to hang.
+* `APIClient.stop` will no longer override the `stop_timeout` value present
+  in the container's configuration.
+* Fixed a bug preventing removal of networks with names containing a space.
+* Fixed a bug where `DockerClient.containers.run` would crash if the
+  `auto_remove` parameter was set to `True`.
+* Changed the default value of `listen_addr` in `join_swarm` to match the
+  one in `init_swarm`.
+* Fixed a bug where handling HTTP errors with no body would cause an unexpected
+  exception to be thrown while generating an `APIError` object.
+
+2.6.1
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/40?closed=1)
+
+### Bugfixes
+
+* Fixed a bug on Python 3 installations preventing the use of the `attach` and
+  `exec_run` methods.
+
+
+2.6.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/38?closed=1)
+
+### Features
+
+* Added support for `mounts` in `APIClient.create_host_config` and
+  `DockerClient.containers.run`
+* Added support for `consistency`, `tmpfs_size` and `tmpfs_mode` when
+  creating mount objects.
+* `Mount` objects now support the `tmpfs` and `npipe` types.
+* Added support for `extra_hosts` in the `build` methods.
+* Added support for the configs API:
+    * In `APIClient`: `create_config`, `inspect_config`, `remove_config`,
+      `configs`
+    * In `DockerClient`: `configs.create`, `configs.get`, `configs.list` and
+      the `Config` model.
+    * Added `configs` parameter to `ContainerSpec`. Each item in the `configs`
+      list must be a `docker.types.ConfigReference` instance.
+* Added support for the following parameters when creating a `ContainerSpec`
+  object: `groups`, `open_stdin`, `read_only`, `stop_signal`, `helathcheck`,
+  `hosts`, `ns_config`, `configs`, `privileges`.
+* Added the following configuration classes to `docker.types`:
+  `ConfigReference`, `DNSConfig`, `Privileges`, `SwarmExternalCA`.
+* Added support for `driver` in `APIClient.create_secret` and
+  `DockerClient.secrets.create`.
+* Added support for `scope` in `APIClient.inspect_network` and
+  `APIClient.create_network`, and their `DockerClient` equivalent.
+* Added support for the following parameters to `create_swarm_spec`:
+  `external_cas`, `labels`, `signing_ca_cert`, `signing_ca_key`,
+  `ca_force_rotate`, `autolock_managers`, `log_driver`. These additions
+  also apply to `DockerClient.swarm.init`.
+* Added support for `insert_defaults` in `APIClient.inspect_service` and
+  `DockerClient.services.get`.
+
+### Bugfixes
+
+* Fixed a bug where reading a 0-length frame in log streams would incorrectly
+  interrupt streaming.
+* Fixed a bug where the `id` member on `Swarm` objects wasn't being populated.
+* Fixed a bug that would cause some data at the beginning of an upgraded
+  connection stream (`attach`, `exec_run`) to disappear.
+
+2.5.1
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/37?closed=1)
+
+### Bugfixes
+
+* Fixed a bug where patterns ending with `**` in `.dockerignore` would
+  raise an exception
+* Fixed a bug where using `attach` with the `stream` argument set to `False`
+  would raise an exception
+
+2.5.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/34?closed=1)
+
+### Features
+
+* Added support for the `squash` parameter in `APIClient.build` and
+  `DockerClient.images.build`.
+* When using API version 1.23 or above, `load_image` will now return a
+  generator of progress as JSON `dict`s.
+* `remove_image` now returns the content of the API's response.
+
+
+### Bugfixes
+
+* Fixed an issue where the `auto_remove` parameter in
+  `DockerClient.containers.run` was not taken into account.
+* Fixed a bug where `.dockerignore` patterns starting with a slash
+  were ignored.
+* Fixed an issue with the handling of `**` patterns in `.dockerignore`
+* Fixed a bug where building `FROM` a private Docker Hub image when not
+  using a cred store would fail.
+* Fixed a bug where calling `create_service` or `update_service` with
+  `task_template` as a `dict` would raise an exception.
+* Fixed the handling of TTY-enabled containers in `attach` and `exec_run`.
+* `DockerClient.containers.run` will no longer attempt to stream logs if the
+  log driver doesn't support the operation.
+
+### Miscellaneous
+
+* Added extra requirements for better TLS support on some platforms.
+  These can be installed or required through the `docker[tls]` notation.
+
+2.4.2
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/36?closed=1)
+
+### Bugfixes
+
+* Fixed a bug where the `split_port` utility would raise an exception when
+  passed a non-string argument.
+
+2.4.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/33?closed=1)
+
+### Features
+
+* Added support for the `target` and `network_mode` parameters in
+  `APIClient.build` and `DockerClient.images.build`.
+* Added support for the `runtime` parameter in `APIClient.create_container`
+  and `DockerClient.containers.run`.
+* Added support for the `ingress` parameter in `APIClient.create_network` and
+  `DockerClient.networks.create`.
+* Added support for `placement` configuration in `docker.types.TaskTemplate`.
+* Added support for `tty` configuration in `docker.types.ContainerSpec`.
+* Added support for `start_period` configuration in `docker.types.Healthcheck`.
+* The `credHelpers` section in Docker's configuration file is now recognized.
+* Port specifications including IPv6 endpoints are now supported.
+
+### Bugfixes
+
+* Fixed a bug where instantiating a `DockerClient` using `docker.from_env`
+  wouldn't correctly set the default timeout value.
+* Fixed a bug where `DockerClient.secrets` was not accessible as a property.
+* Fixed a bug where `DockerClient.build` would sometimes return the wrong
+  image.
+* Fixed a bug where values for `HostConfig.nano_cpus` exceeding 2^32 would
+  raise a type error.
+* `Image.tag` now properly returns `True` when the operation is successful.
+* `APIClient.logs` and `Container.logs` now raise an exception if the `since`
+  argument uses an unsupported type instead of ignoring the value.
+* Fixed a bug where some methods would raise a `NullResource` exception when
+  the resource ID was provided using a keyword argument.
+
+### Miscellaneous
+
+* `APIClient` instances can now be pickled.
+
+2.3.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/31?closed=1)
+
+### Features
+
+* Added support for the following `HostConfig` parameters: `volume_driver`,
+  `cpu_count`, `cpu_percent`, `nano_cpus`, `cpuset_mems`.
+* Added support for `verbose` parameter in `APIClient.inspect_network` and
+  `DockerClient.networks.get`.
+* Added support for the `environment` parameter in `APIClient.exec_create`
+  and `Container.exec_run`
+* Added `reload_config` method to `APIClient`, that lets the user reload
+  the `config.json` data from disk.
+* Added `labels` property to the `Image` and `Container` classes.
+* Added `image` property to the `Container` class.
+
+### Bugfixes
+
+* Fixed a bug where setting `replicas` to zero in `ServiceMode` would not
+  register as a valid entry.
+* Fixed a bug where `DockerClient.images.build` would report a failure after
+  a successful build if a `tag` was set.
+* Fixed an issue where `DockerClient.images.pull` would fail to return the
+  corresponding image object if a `tag` was set.
+* Fixed a bug where a list of `mounts` provided to `APIClient.create_service`
+  would sometimes be parsed incorrectly.
+* Fixed a bug where calling `Network.containers` would crash when no containers
+  were associated with the network.
+* Fixed an issue where `Network.connect` and `Network.disconnect` would not
+  accept some of the documented parameters.
+* Fixed a bug where the `cpuset_cpus` parameter would not be properly set in
+  `APIClient.create_host_config`.
+
+### Miscellaneous
+
+* The invalid `networks` argument in `DockerClient.containers.run` has been
+  replaced with a (working) singular `network` argument.
+
+
+2.2.1
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/32?closed=1)
+
+### Bugfixes
+
+* Fixed a bug where the `status_code` attribute of `APIError` exceptions would
+  not reflect the expected value.
+* Fixed an issue where the `events` method would time out unexpectedly if no
+  data was sent by the engine for a given amount of time.
+
+
+2.2.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/30?closed=1)
+
+### Features
+
+* Default API version has been bumped to `1.26` (Engine 1.13.1+)
+* Upgrade plugin:
+  * Added the `upgrade_plugin` method to the `APIClient` class
+  * Added the `upgrade` method to the `Plugin` class
+* Service logs:
+  * Added the `service_logs` method to the `APIClient` class
+  * Added the `logs` method to the `Service` class
+* Added the `df` method to `APIClient` and `DockerClient`
+* Added support for `init` and `init_path` parameters in `HostConfig`
+  and `DockerClient.containers.run`
+* Added support for `hostname` parameter in `ContainerSpec` and
+  `DockerClient.service.create`
+* Added support for port range to single port in port mappings
+  (e.g. `8000-8010:80`)
+
+### Bugfixes
+
+* Fixed a bug where a missing container port in a port mapping would raise
+  an unexpected `TypeError`
+* Fixed a bug where the `events` method in `APIClient` and `DockerClient`
+  would not respect custom headers set in `config.json`
+
+
+2.1.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/27?closed=1)
+
+### Features
+
+* Added the following pruning methods:
+    * In `APIClient`: `prune_containers`, `prune_images`, `prune_networks`,
+      `prune_volumes`
+    * In `DockerClient`: `containers.prune`, `images.prune`, `networks.prune`,
+      `volumes.prune`
+* Added support for the plugins API:
+    * In `APIClient`: `configure_plugin`, `create_plugin`, `disable_plugin`,
+      `enable_plugin`, `inspect_plugin`, `pull_plugin`, `plugins`,
+      `plugin_privileges`, `push_plugin`, `remove_plugin`
+    * In `DockerClient`: `plugins.create`, `plugins.get`, `plugins.install`,
+      `plugins.list`, and the `Plugin` model.
+* Added support for the secrets API:
+    * In `APIClient`: `create_secret`, `inspect_secret`, `remove_secret`,
+      `secrets`
+    * In `DockerClient`: `secret.create`, `secret.get`, `secret.list` and
+      the `Secret` model.
+    * Added `secrets` parameter to `ContainerSpec`. Each item in the `secrets`
+      list must be a `docker.types.SecretReference` instance.
+* Added support for `cache_from` in `APIClient.build` and
+  `DockerClient.images.build`.
+* Added support for `auto_remove` and `storage_opt` in
+  `APIClient.create_host_config` and `DockerClient.containers.run`
+* Added support for `stop_timeout` in `APIClient.create_container` and
+  `DockerClient.containers.run`
+* Added support for the `force` parameter in `APIClient.remove_volume` and
+  `Volume.remove`
+* Added support for `max_failure_ratio` and `monitor` in `UpdateConfig`
+* Added support for `force_update` in `TaskTemplate`
+* Made `name` parameter optional in `APIClient.create_volume` and
+  `DockerClient.volumes.create`
+
+### Bugfixes
+
+* Fixed a bug where building from a directory containing socket-type files
+  would raise an unexpected `AttributeError`.
+* Fixed an issue that was preventing the `DockerClient.swarm.init` method to
+  take into account arguments passed to it.
+* `Image.tag` now correctly returns a boolean value upon completion.
+* Fixed several issues related to passing `volumes` in
+  `DockerClient.containers.run`
+* Fixed an issue where `DockerClient.image.build` wouldn't return an `Image`
+  object even when the build was successful
+
+
+2.0.2
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/29?closed=1)
+
+### Bugfixes
+
+* Installation of the package now fails if the `docker-py` package is
+  installed in order to prevent obscure naming conflicts when both
+  packages co-exist.
+* Added missing `filters` parameter to `APIClient.networks`.
+* Resource objects generated by the `DockerClient` are now hashable.
+* Fixed a bug where retrieving untagged images using `DockerClient`
+  would raise a `TypeError` exception.
+* `mode` parameter in `create_service` is now properly converted to
+  a valid data type for the Engine API. Use `ServiceMode` for advanced
+  configurations.
+* Fixed a bug where the decoded `APIClient.events` stream would sometimes raise
+  an exception when a container is stopped or restarted.
+
+2.0.1
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/28?closed=1)
+
+### Bugfixes
+
+* Fixed a bug where forward slashes in some .dockerignore patterns weren't
+  being parsed correctly on Windows
+* Fixed a bug where `Mount.parse_mount_string` would never set the read_only
+  parameter on the resulting `Mount`.
+* Fixed a bug where `Mount.parse_mount_string` would incorrectly mark host
+  binds as being of `volume` type.
+
+2.0.0
+-----
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/22?closed=1)
+
+### Breaking changes
+
+* Dropped support for Python 2.6
+* `docker.Client` has been renamed to `docker.APIClient`
+* `docker.from_env` now creates a `DockerClient` instance instead of an
+  `APIClient` instance.
+* Removed HostConfig parameters from `APIClient.start`
+* The minimum supported API version is now 1.21 (Engine version 1.9.0+)
+* The name of the `pip` package is now `docker` (was: `docker-py`). New
+  versions of this library will only be published as `docker` from now on.
+* `docker.ssladapter` is now `docker.transport.ssladapter`
+* The package structure has been flattened in certain cases, which may affect
+  import for `docker.auth` and `docker.utils.ports`
+* `docker.utils.types` has been moved to `docker.types`
+* `create_host_config`, `create_ipam_pool` and `create_ipam_config` have been
+  removed from `docker.utils`. They have been replaced by the following classes
+  in `docker.types`: `HostConfig`, `IPAMPool` and `IPAMCOnfig`.
+
+### Features
+
+* Added a high-level, user-focused API as `docker.DockerClient`. See the
+  README and documentation for more information.
+* Implemented `update_node` method in `APIClient`.
+* Implemented `remove_node` method in `APIClient`.
+* Added support for `restart_policy` in `update_container`.
+* Added support for `labels` and `shmsize` in `build`.
+* Added support for `attachable` in `create_network`
+* Added support for `healthcheck` in `create_container`.
+* Added support for `isolation` in `HostConfig`.
+* Expanded support for `pid_mode` in `HostConfig` (now supports arbitrary
+  values for API version >= 1.24).
+* Added support for `options` in `IPAMConfig`
+* Added a `HealthCheck` class to `docker.types` to be used in
+  `create_container`.
+* Added an `EndpointSpec` class to `docker.types` to be used in
+  `create_service` and `update_service`.
+
+
+### Bugfixes
+
+* Fixed a bug where auth information would not be properly passed to the engine
+  during a `build` if the client used a credentials store.
+* Fixed an issue with some exclusion patterns in `build`.
+* Fixed an issue where context files were bundled with the wrong permissions
+  when calling `build` on Windows.
+* Fixed an issue where auth info would not be retrieved from its default location
+  on Windows.
+* Fixed an issue where lists of `networks` in `create_service` and
+  `update_service` wouldn't be properly converted for the engine.
+* Fixed an issue where `endpoint_config` in `create_service` and
+  `update_service` would be ignored.
+* `endpoint_config` in `create_service` and `update_service` has been
+  deprecated in favor of `endpoint_spec`
+* Fixed a bug where `constraints` in a `TaskTemplate` object wouldn't be
+  properly converted for the engine.
+* Fixed an issue where providing a dictionary for `env` in `ContainerSpec`
+  would provoke an `APIError` when sent to the engine.
+* Fixed a bug where providing an `env_file` containing empty lines in
+  `create_container`would raise an exception.
+* Fixed a bug where `detach` was being ignored by `exec_start`.
+
+### Documentation
+
+* Documentation for classes and methods is now included alongside the code as
+  docstrings.
+
+1.10.6
+------
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/26?closed=1)
+
+### Bugfixes
+
+* Fixed an issue where setting a `NpipeSocket` instance to blocking mode would
+  put it in non-blocking mode and vice-versa.
+
+
+1.10.5
+------
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/25?closed=1)
+
+### Bugfixes
+
+* Fixed an issue where concurrent attempts to access to a named pipe by the
+  client would sometimes cause recoverable exceptions to be raised.
+
+
+1.10.4
+------
+
+[List of PRs / issues for this release](https://github.com/docker/docker-py/milestone/24?closed=1)
+
+### Bugfixes
+
+* Fixed an issue where `RestartPolicy.condition_types.ON_FAILURE` would yield
+  an invalid value.
+* Fixed an issue where the SSL connection adapter would receive an invalid
+  argument.
+* Fixed an issue that caused the Client to fail to reach API endpoints when
+  the provided `base_url` had a trailing slash.
+* Fixed a bug where some `environment` values in `create_container`
+  containing unicode characters would raise an encoding error.
+* Fixed a number of issues tied with named pipe transport on Windows.
+* Fixed a bug where inclusion patterns in `.dockerignore` would cause some
+  excluded files to appear in the build context on Windows.
+
+### Miscellaneous
+
+* Adjusted version requirements for the `requests` library.
+* It is now possible to run the docker-py test suite on Windows.
+
+
 1.10.3
 ------
 

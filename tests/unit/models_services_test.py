@@ -9,6 +9,7 @@ class CreateServiceKwargsTest(unittest.TestCase):
             'command': 'true',
             'name': 'somename',
             'labels': {'key': 'value'},
+            'hostname': 'test_host',
             'mode': 'global',
             'update_config': {'update': 'config'},
             'networks': ['somenet'],
@@ -34,19 +35,19 @@ class CreateServiceKwargsTest(unittest.TestCase):
             'labels': {'key': 'value'},
             'mode': 'global',
             'update_config': {'update': 'config'},
-            'networks': ['somenet'],
             'endpoint_spec': {'blah': 'blah'},
         }
         assert set(task_template.keys()) == set([
             'ContainerSpec', 'Resources', 'RestartPolicy', 'Placement',
-            'LogDriver'
+            'LogDriver', 'Networks'
         ])
         assert task_template['Placement'] == {'Constraints': ['foo=bar']}
         assert task_template['LogDriver'] == {
             'Name': 'logdriver',
             'Options': {'foo': 'bar'}
         }
+        assert task_template['Networks'] == [{'Target': 'somenet'}]
         assert set(task_template['ContainerSpec'].keys()) == set([
-            'Image', 'Command', 'Args', 'Env', 'Dir', 'User', 'Labels',
-            'Mounts', 'StopGracePeriod'
+            'Image', 'Command', 'Args', 'Hostname', 'Env', 'Dir', 'User',
+            'Labels', 'Mounts', 'StopGracePeriod'
         ])

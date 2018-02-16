@@ -1,12 +1,26 @@
 import os
-import warnings
 from datetime import datetime
 
 from .. import auth, utils
-from ..constants import INSECURE_REGISTRY_DEPRECATION_WARNING
 
 
 class DaemonApiMixin(object):
+    @utils.minimum_version('1.25')
+    def df(self):
+        """
+        Get data usage information.
+
+        Returns:
+            (dict): A dictionary representing different resource categories
+            and their respective data usage.
+
+        Raises:
+            :py:class:`docker.errors.APIError`
+                If the server returns an error.
+        """
+        url = self._url('/system/df')
+        return self._result(self._get(url), True)
+
     def events(self, since=None, until=None, filters=None, decode=None):
         """
         Get real-time events from the server. Similar to the ``docker events``
@@ -52,9 +66,10 @@ class DaemonApiMixin(object):
             'until': until,
             'filters': filters
         }
+        url = self._url('/events')
 
         return self._stream_helper(
-            self.get(self._url('/events'), params=params, stream=True),
+            self._get(url, params=params, stream=True, timeout=None),
             decode=decode
         )
 
@@ -73,7 +88,7 @@ class DaemonApiMixin(object):
         return self._result(self._get(self._url("/info")), True)
 
     def login(self, username, password=None, email=None, registry=None,
-              reauth=False, insecure_registry=False, dockercfg_path=None):
+              reauth=False, dockercfg_path=None):
         """
         Authenticate with a registry. Similar to the ``docker login`` command.
 
@@ -83,10 +98,11 @@ class DaemonApiMixin(object):
             email (str): The email for the registry account
             registry (str): URL to the registry.  E.g.
                 ``https://index.docker.io/v1/``
-            reauth (bool): Whether refresh existing authentication on the
-                Docker server.
-            dockercfg_path (str): Use a custom path for the ``.dockercfg`` file
-        (default ``$HOME/.dockercfg``)
+            reauth (bool): Whether or not to refresh existing authentication on
+                the Docker server.
+            dockercfg_path (str): Use a custom path for the Docker config file
+                (default ``$HOME/.docker/config.json`` if present,
+                otherwise``$HOME/.dockercfg``)
 
         Returns:
             (dict): The response from the login request
@@ -95,11 +111,6 @@ class DaemonApiMixin(object):
             :py:class:`docker.errors.APIError`
                 If the server returns an error.
         """
-        if insecure_registry:
-            warnings.warn(
-                INSECURE_REGISTRY_DEPRECATION_WARNING.format('login()'),
-                DeprecationWarning
-            )
 
         # If we don't have any auth data so far, try reloading the config file
         # one more time in case anything showed up in there.
@@ -126,7 +137,9 @@ class DaemonApiMixin(object):
 
         response = self._post_json(self._url('/auth'), data=req_data)
         if response.status_code == 200:
-            self._auth_configs[registry or auth.INDEX_NAME] = req_data
+            if 'auths' not in self._auth_configs:
+                self._auth_configs['auths'] = {}
+            self._auth_configs['auths'][registry or auth.INDEX_NAME] = req_data
         return self._result(response, json=True)
 
     def ping(self):
