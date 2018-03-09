@@ -1,13 +1,9 @@
-FROM python:3.5
+FROM python:2.7
 
-ARG uid=1000
-ARG gid=1000
+RUN mkdir /home/docker-py
+WORKDIR /home/docker-py
 
-RUN addgroup --gid $gid sphinx \
- && useradd --uid $uid --gid $gid -M sphinx
+COPY docs-requirements.txt /home/docker-py/docs-requirements.txt
+RUN pip install -r docs-requirements.txt
 
-WORKDIR /src
-COPY requirements.txt docs-requirements.txt ./
-RUN pip install -r requirements.txt -r docs-requirements.txt
-
-USER sphinx
+COPY . /home/docker-py

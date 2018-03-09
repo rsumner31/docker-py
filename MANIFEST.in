@@ -5,4 +5,3 @@ include README.rst
 include LICENSE
 recursive-include tests *.py
 recursive-include tests/unit/testdata *
-recursive-include tests/integration/testdata *

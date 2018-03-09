@@ -7,10 +7,12 @@ import os.path
 import random
 import shutil
 import tempfile
-import unittest
 
-from docker import auth, errors
-import pytest
+from docker import auth
+from docker.auth.auth import parse_auth
+from docker import errors
+
+from .. import base
 
 try:
     from unittest import mock
@@ -18,7 +20,7 @@ except ImportError:
     import mock
 
 
-class RegressionTest(unittest.TestCase):
+class RegressionTest(base.BaseTestCase):
     def test_803_urlsafe_encode(self):
         auth_data = {
             'username': 'root',
@@ -29,70 +31,84 @@ class RegressionTest(unittest.TestCase):
         assert b'_' in encoded
 
 
-class ResolveRepositoryNameTest(unittest.TestCase):
+class ResolveRepositoryNameTest(base.BaseTestCase):
     def test_resolve_repository_name_hub_library_image(self):
-        assert auth.resolve_repository_name('image') == (
-            'docker.io', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('image'),
+            ('docker.io', 'image'),
         )
 
     def test_resolve_repository_name_dotted_hub_library_image(self):
-        assert auth.resolve_repository_name('image.valid') == (
-            'docker.io', 'image.valid'
+        self.assertEqual(
+            auth.resolve_repository_name('image.valid'),
+            ('docker.io', 'image.valid')
         )
 
     def test_resolve_repository_name_hub_image(self):
-        assert auth.resolve_repository_name('username/image') == (
-            'docker.io', 'username/image'
+        self.assertEqual(
+            auth.resolve_repository_name('username/image'),
+            ('docker.io', 'username/image'),
         )
 
     def test_explicit_hub_index_library_image(self):
-        assert auth.resolve_repository_name('docker.io/image') == (
-            'docker.io', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('docker.io/image'),
+            ('docker.io', 'image')
         )
 
     def test_explicit_legacy_hub_index_library_image(self):
-        assert auth.resolve_repository_name('index.docker.io/image') == (
-            'docker.io', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('index.docker.io/image'),
+            ('docker.io', 'image')
         )
 
     def test_resolve_repository_name_private_registry(self):
-        assert auth.resolve_repository_name('my.registry.net/image') == (
-            'my.registry.net', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('my.registry.net/image'),
+            ('my.registry.net', 'image'),
         )
 
     def test_resolve_repository_name_private_registry_with_port(self):
-        assert auth.resolve_repository_name('my.registry.net:5000/image') == (
-            'my.registry.net:5000', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('my.registry.net:5000/image'),
+            ('my.registry.net:5000', 'image'),
         )
 
     def test_resolve_repository_name_private_registry_with_username(self):
-        assert auth.resolve_repository_name(
-            'my.registry.net/username/image'
-        ) == ('my.registry.net', 'username/image')
+        self.assertEqual(
+            auth.resolve_repository_name('my.registry.net/username/image'),
+            ('my.registry.net', 'username/image'),
+        )
 
     def test_resolve_repository_name_no_dots_but_port(self):
-        assert auth.resolve_repository_name('hostname:5000/image') == (
-            'hostname:5000', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('hostname:5000/image'),
+            ('hostname:5000', 'image'),
         )
 
     def test_resolve_repository_name_no_dots_but_port_and_username(self):
-        assert auth.resolve_repository_name(
-            'hostname:5000/username/image'
-        ) == ('hostname:5000', 'username/image')
+        self.assertEqual(
+            auth.resolve_repository_name('hostname:5000/username/image'),
+            ('hostname:5000', 'username/image'),
+        )
 
     def test_resolve_repository_name_localhost(self):
-        assert auth.resolve_repository_name('localhost/image') == (
-            'localhost', 'image'
+        self.assertEqual(
+            auth.resolve_repository_name('localhost/image'),
+            ('localhost', 'image'),
         )
 
     def test_resolve_repository_name_localhost_with_username(self):
-        assert auth.resolve_repository_name('localhost/username/image') == (
-            'localhost', 'username/image'
+        self.assertEqual(
+            auth.resolve_repository_name('localhost/username/image'),
+            ('localhost', 'username/image'),
         )
 
     def test_invalid_index_name(self):
-        with pytest.raises(errors.InvalidRepository):
-            auth.resolve_repository_name('-gecko.com/image')
+        self.assertRaises(
+            errors.InvalidRepository,
+            lambda: auth.resolve_repository_name('-gecko.com/image')
+        )
 
 
 def encode_auth(auth_info):
@@ -101,173 +117,167 @@ def encode_auth(auth_info):
         auth_info.get('password', '').encode('utf-8'))
 
 
-class ResolveAuthTest(unittest.TestCase):
+class ResolveAuthTest(base.BaseTestCase):
     index_config = {'auth': encode_auth({'username': 'indexuser'})}
     private_config = {'auth': encode_auth({'username': 'privateuser'})}
     legacy_config = {'auth': encode_auth({'username': 'legacyauth'})}
 
-    auth_config = {
-        'auths': auth.parse_auth({
-            'https://index.docker.io/v1/': index_config,
-            'my.registry.net': private_config,
-            'http://legacy.registry.url/v1/': legacy_config,
-        })
-    }
+    auth_config = parse_auth({
+        'https://index.docker.io/v1/': index_config,
+        'my.registry.net': private_config,
+        'http://legacy.registry.url/v1/': legacy_config,
+    })
 
     def test_resolve_authconfig_hostname_only(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'my.registry.net'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'my.registry.net'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_no_protocol(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'my.registry.net/v1/'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'my.registry.net/v1/'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_no_path(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'http://my.registry.net'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'http://my.registry.net'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_no_path_trailing_slash(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'http://my.registry.net/'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'http://my.registry.net/'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_no_path_wrong_secure_proto(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'https://my.registry.net'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'https://my.registry.net'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_no_path_wrong_insecure_proto(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'http://index.docker.io'
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'http://index.docker.io'
+            )['username'],
+            'indexuser'
+        )
 
     def test_resolve_authconfig_path_wrong_proto(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'https://my.registry.net/v1/'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'https://my.registry.net/v1/'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_default_registry(self):
-        assert auth.resolve_authconfig(
-            self.auth_config
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(self.auth_config)['username'],
+            'indexuser'
+        )
 
     def test_resolve_authconfig_default_explicit_none(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, None
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(self.auth_config, None)['username'],
+            'indexuser'
+        )
 
     def test_resolve_authconfig_fully_explicit(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'http://my.registry.net/v1/'
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'http://my.registry.net/v1/'
+            )['username'],
+            'privateuser'
+        )
 
     def test_resolve_authconfig_legacy_config(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'legacy.registry.url'
-        )['username'] == 'legacyauth'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, 'legacy.registry.url'
+            )['username'],
+            'legacyauth'
+        )
 
     def test_resolve_authconfig_no_match(self):
-        assert auth.resolve_authconfig(
-            self.auth_config, 'does.not.exist'
-        ) is None
+        self.assertTrue(
+            auth.resolve_authconfig(self.auth_config, 'does.not.exist') is None
+        )
 
     def test_resolve_registry_and_auth_library_image(self):
         image = 'image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            )['username'],
+            'indexuser',
+        )
 
     def test_resolve_registry_and_auth_hub_image(self):
         image = 'username/image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            )['username'],
+            'indexuser',
+        )
 
     def test_resolve_registry_and_auth_explicit_hub(self):
         image = 'docker.io/username/image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            )['username'],
+            'indexuser',
+        )
 
     def test_resolve_registry_and_auth_explicit_legacy_hub(self):
         image = 'index.docker.io/username/image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        )['username'] == 'indexuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            )['username'],
+            'indexuser',
+        )
 
     def test_resolve_registry_and_auth_private_registry(self):
         image = 'my.registry.net/image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        )['username'] == 'privateuser'
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            )['username'],
+            'privateuser',
+        )
 
     def test_resolve_registry_and_auth_unauthenticated_registry(self):
         image = 'other.registry.net/image'
-        assert auth.resolve_authconfig(
-            self.auth_config, auth.resolve_repository_name(image)[0]
-        ) is None
+        self.assertEqual(
+            auth.resolve_authconfig(
+                self.auth_config, auth.resolve_repository_name(image)[0]
+            ),
+            None,
+        )
 
 
-class CredStoreTest(unittest.TestCase):
-    def test_get_credential_store(self):
-        auth_config = {
-            'credHelpers': {
-                'registry1.io': 'truesecret',
-                'registry2.io': 'powerlock'
-            },
-            'credsStore': 'blackbox',
-        }
-
-        assert auth.get_credential_store(
-            auth_config, 'registry1.io'
-        ) == 'truesecret'
-        assert auth.get_credential_store(
-            auth_config, 'registry2.io'
-        ) == 'powerlock'
-        assert auth.get_credential_store(
-            auth_config, 'registry3.io'
-        ) == 'blackbox'
-
-    def test_get_credential_store_no_default(self):
-        auth_config = {
-            'credHelpers': {
-                'registry1.io': 'truesecret',
-                'registry2.io': 'powerlock'
-            },
-        }
-        assert auth.get_credential_store(
-            auth_config, 'registry2.io'
-        ) == 'powerlock'
-        assert auth.get_credential_store(
-            auth_config, 'registry3.io'
-        ) is None
-
-    def test_get_credential_store_default_index(self):
-        auth_config = {
-            'credHelpers': {
-                'https://index.docker.io/v1/': 'powerlock'
-            },
-            'credsStore': 'truesecret'
-        }
-
-        assert auth.get_credential_store(auth_config, None) == 'powerlock'
-        assert auth.get_credential_store(
-            auth_config, 'docker.io'
-        ) == 'powerlock'
-        assert auth.get_credential_store(
-            auth_config, 'images.io'
-        ) == 'truesecret'
-
-
-class LoadConfigTest(unittest.TestCase):
+class LoadConfigTest(base.Cleanup, base.BaseTestCase):
     def test_load_config_no_file(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder)
         cfg = auth.load_config(folder)
-        assert cfg is not None
+        self.assertTrue(cfg is not None)
 
     def test_load_config(self):
         folder = tempfile.mkdtemp()
@@ -279,12 +289,12 @@ class LoadConfigTest(unittest.TestCase):
             f.write('email = sakuya@scarlet.net')
         cfg = auth.load_config(dockercfg_path)
         assert auth.INDEX_NAME in cfg
-        assert cfg[auth.INDEX_NAME] is not None
+        self.assertNotEqual(cfg[auth.INDEX_NAME], None)
         cfg = cfg[auth.INDEX_NAME]
-        assert cfg['username'] == 'sakuya'
-        assert cfg['password'] == 'izayoi'
-        assert cfg['email'] == 'sakuya@scarlet.net'
-        assert cfg.get('auth') is None
+        self.assertEqual(cfg['username'], 'sakuya')
+        self.assertEqual(cfg['password'], 'izayoi')
+        self.assertEqual(cfg['email'], 'sakuya@scarlet.net')
+        self.assertEqual(cfg.get('auth'), None)
 
     def test_load_config_with_random_name(self):
         folder = tempfile.mkdtemp()
@@ -307,12 +317,12 @@ class LoadConfigTest(unittest.TestCase):
 
         cfg = auth.load_config(dockercfg_path)
         assert registry in cfg
-        assert cfg[registry] is not None
+        self.assertNotEqual(cfg[registry], None)
         cfg = cfg[registry]
-        assert cfg['username'] == 'sakuya'
-        assert cfg['password'] == 'izayoi'
-        assert cfg['email'] == 'sakuya@scarlet.net'
-        assert cfg.get('auth') is None
+        self.assertEqual(cfg['username'], 'sakuya')
+        self.assertEqual(cfg['password'], 'izayoi')
+        self.assertEqual(cfg['email'], 'sakuya@scarlet.net')
+        self.assertEqual(cfg.get('auth'), None)
 
     def test_load_config_custom_config_env(self):
         folder = tempfile.mkdtemp()
@@ -334,12 +344,12 @@ class LoadConfigTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {'DOCKER_CONFIG': folder}):
             cfg = auth.load_config(None)
             assert registry in cfg
-            assert cfg[registry] is not None
+            self.assertNotEqual(cfg[registry], None)
             cfg = cfg[registry]
-            assert cfg['username'] == 'sakuya'
-            assert cfg['password'] == 'izayoi'
-            assert cfg['email'] == 'sakuya@scarlet.net'
-            assert cfg.get('auth') is None
+            self.assertEqual(cfg['username'], 'sakuya')
+            self.assertEqual(cfg['password'], 'izayoi')
+            self.assertEqual(cfg['email'], 'sakuya@scarlet.net')
+            self.assertEqual(cfg.get('auth'), None)
 
     def test_load_config_custom_config_env_with_auths(self):
         folder = tempfile.mkdtemp()
@@ -362,12 +372,13 @@ class LoadConfigTest(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {'DOCKER_CONFIG': folder}):
             cfg = auth.load_config(None)
-            assert registry in cfg['auths']
-            cfg = cfg['auths'][registry]
-            assert cfg['username'] == 'sakuya'
-            assert cfg['password'] == 'izayoi'
-            assert cfg['email'] == 'sakuya@scarlet.net'
-            assert cfg.get('auth') is None
+            assert registry in cfg
+            self.assertNotEqual(cfg[registry], None)
+            cfg = cfg[registry]
+            self.assertEqual(cfg['username'], 'sakuya')
+            self.assertEqual(cfg['password'], 'izayoi')
+            self.assertEqual(cfg['email'], 'sakuya@scarlet.net')
+            self.assertEqual(cfg.get('auth'), None)
 
     def test_load_config_custom_config_env_utf8(self):
         folder = tempfile.mkdtemp()
@@ -391,12 +402,37 @@ class LoadConfigTest(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {'DOCKER_CONFIG': folder}):
             cfg = auth.load_config(None)
-            assert registry in cfg['auths']
-            cfg = cfg['auths'][registry]
-            assert cfg['username'] == b'sakuya\xc3\xa6'.decode('utf8')
-            assert cfg['password'] == b'izayoi\xc3\xa6'.decode('utf8')
-            assert cfg['email'] == 'sakuya@scarlet.net'
-            assert cfg.get('auth') is None
+            assert registry in cfg
+            self.assertNotEqual(cfg[registry], None)
+            cfg = cfg[registry]
+            self.assertEqual(cfg['username'], b'sakuya\xc3\xa6'.decode('utf8'))
+            self.assertEqual(cfg['password'], b'izayoi\xc3\xa6'.decode('utf8'))
+            self.assertEqual(cfg['email'], 'sakuya@scarlet.net')
+            self.assertEqual(cfg.get('auth'), None)
+
+    def test_load_config_custom_config_env_with_headers(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+
+        dockercfg_path = os.path.join(folder, 'config.json')
+        config = {
+            'HttpHeaders': {
+                'Name': 'Spike',
+                'Surname': 'Spiegel'
+            },
+        }
+
+        with open(dockercfg_path, 'w') as f:
+            json.dump(config, f)
+
+        with mock.patch.dict(os.environ, {'DOCKER_CONFIG': folder}):
+            cfg = auth.load_config(None)
+            assert 'HttpHeaders' in cfg
+            self.assertNotEqual(cfg['HttpHeaders'], None)
+            cfg = cfg['HttpHeaders']
+
+            self.assertEqual(cfg['Name'], 'Spike')
+            self.assertEqual(cfg['Surname'], 'Spiegel')
 
     def test_load_config_unknown_keys(self):
         folder = tempfile.mkdtemp()
@@ -424,7 +460,7 @@ class LoadConfigTest(unittest.TestCase):
             json.dump(config, f)
 
         cfg = auth.load_config(dockercfg_path)
-        assert cfg == {'auths': {'scarlet.net': {}}}
+        assert cfg == {'scarlet.net': {}}
 
     def test_load_config_identity_token(self):
         folder = tempfile.mkdtemp()
@@ -445,7 +481,7 @@ class LoadConfigTest(unittest.TestCase):
             json.dump(config, f)
 
         cfg = auth.load_config(dockercfg_path)
-        assert registry in cfg['auths']
-        cfg = cfg['auths'][registry]
+        assert registry in cfg
+        cfg = cfg[registry]
         assert 'IdentityToken' in cfg
         assert cfg['IdentityToken'] == token

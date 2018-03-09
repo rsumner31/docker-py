@@ -69,11 +69,6 @@ class NpipeHTTPConnectionPool(urllib3.connectionpool.HTTPConnectionPool):
 
 
 class NpipeAdapter(requests.adapters.HTTPAdapter):
-
-    __attrs__ = requests.adapters.HTTPAdapter.__attrs__ + ['npipe_path',
-                                                           'pools',
-                                                           'timeout']
-
     def __init__(self, base_url, timeout=60,
                  pool_connections=constants.DEFAULT_NUM_POOLS):
         self.npipe_path = base_url.replace('npipe://', '')
@@ -101,7 +96,7 @@ class NpipeAdapter(requests.adapters.HTTPAdapter):
         # doesn't have a hostname, like is the case when using a UNIX socket.
         # Since proxies are an irrelevant notion in the case of UNIX sockets
         # anyway, we simply return the path URL directly.
-        # See also: https://github.com/docker/docker-sdk-python/issues/811
+        # See also: https://github.com/docker/docker-py/issues/811
         return request.path_url
 
     def close(self):

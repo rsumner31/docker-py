@@ -13,4 +13,5 @@ html/*
 __pycache__
 
 # Compiled Documentation
-docs/_build
+site/
+Makefile
